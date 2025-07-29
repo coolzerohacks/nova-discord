@@ -4,7 +4,7 @@ import logging
 import discord
 from discord.ext import commands
 import requests
-from chat_memory import ChatMemory
+from core.chat_memory import get_memory, add_to_memory
 
 # Configure logging
 logging.basicConfig(
@@ -23,7 +23,6 @@ intents.message_content = True
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 bot = commands.Bot(command_prefix="/", intents=intents)
-chat_memory = ChatMemory(max_messages=10)
 
 logger.debug(f"TOKEN repr is {repr(TOKEN)}")
 
@@ -43,7 +42,7 @@ async def forget(ctx):
     try:
         response = requests.post(
             "http://devshell:5001/clear_memory",
-            json={"user_id": "default"},
+            json={"user_id": "zero"},
             timeout=10
         )
         if response.status_code == 200:
@@ -74,26 +73,10 @@ async def on_message(message):
         if not user_msg:
             return
 
-        chat_memory.add_message(user_id, "user", user_msg)
-        context = chat_memory.get_context(user_id)
-        prompt = "\n".join([
-            f"{msg}" if role == "user" else f"Nova: {msg}"
-            for role, msg in context
-        ])
-
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"nova-memory/conversations/{timestamp}_{message.author.name}.txt"
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-
-        with open(filename, "w") as f:
-            f.write(prompt)
-
-        logger.debug(f"Saved conversation to {filename}")
-
         try:
             response = requests.post(
-                "http://devshell:5001/chat-mistral",
-                json={"message": user_msg, "source": "discord"},
+                "http://devshell:5001/chat-llama",
+                json={"message": user_msg, "source": "discord", "user_id": "zero"},
                 timeout=30
             )
             if response.status_code == 200:
@@ -106,7 +89,6 @@ async def on_message(message):
             reply = f"Nova is having a moment: {e}"
             logger.error(f"Exception in devshell call: {e}", exc_info=True)
 
-        chat_memory.add_message(user_id, "assistant", reply)
         await message.channel.send(reply)
 
 bot.run(TOKEN)
